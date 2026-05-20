@@ -1,59 +1,70 @@
 package main
 
 import (
-	"bufio"
-	"encoding/json"
+	"flag"
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
+
+	"github.com/joho/godotenv"
 )
 
-func loadDataFromFile() {
-	file, err := os.Open("data.log")
+func getEnvInt(key string, defaultValue int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+
+	n, err := strconv.Atoi(value)
 	if err != nil {
-		if os.IsNotExist(err) {
-			fmt.Println("No existing data file found. Starting with an empty store.")
-			return
-		}
-		panic(err)
+		panic(fmt.Sprintf("invalid %s value %q: %v", key, value, err))
 	}
-	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			continue
-		}
-		var req PutRequest
-		err := json.Unmarshal([]byte(line), &req)
-		if err != nil {
-			fmt.Printf("Skipping invalid line in data.log: %s (error: %s)\n", line, err.Error())
-			continue
-		}
-		store[req.Key] = req.Value
-	}
-	if err := scanner.Err(); err != nil {
-		fmt.Printf("Error reading file: %s\n", err.Error())
-	}
-}
-
-type PutRequest struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
+	return n
 }
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		panic(err)
+	}
+	// Command-line flags
+	port := flag.Int("port", 8080, "Port to run server on")
+	nodeID := flag.Int("node-id", 1, "Unique node ID")
+	clusterFlag := flag.String(
+		"cluster",
+		"1=127.0.0.1:8080,2=127.0.0.1:8081,3=127.0.0.1:8082",
+		"Cluster configuration",
+	)
 
+	flag.Parse()
+
+	// Load persisted key/value data
 	loadDataFromFile()
 
+	numberOfNodes = getEnvInt("NUMBER_OF_NODES", 3)
+	fmt.Printf("Loaded NUMBER_OF_NODES=%d from .env\n", numberOfNodes)
+
+	// Parse cluster configuration
+	cluster = parseCluster(*clusterFlag, *nodeID)
+
+	fmt.Printf("Node %d starting at %s\n", cluster.Self.ID, cluster.Self.Address)
+	fmt.Println("Known cluster nodes:")
+	for _, n := range cluster.Nodes {
+		fmt.Printf("  Node %d -> %s\n", n.ID, n.Address)
+	}
+
+	// Register handlers
 	http.HandleFunc("/put", handlePostRequest)
-
 	http.HandleFunc("/get", handleGetRequest)
+	http.HandleFunc("/", handleRoot)
 
-	fmt.Println("Starting server on :8080...")
-	err := http.ListenAndServe(":8080", nil)
-	if err != nil {
+	// Start HTTP server
+	addr := fmt.Sprintf(":%d", *port)
+	fmt.Printf("Listening on %s...\n", addr)
+
+	if err := http.ListenAndServe(addr, nil); err != nil {
 		panic(err)
 	}
 }
