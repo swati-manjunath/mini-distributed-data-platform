@@ -7,8 +7,10 @@ import (
 	"os"
 )
 
+var dataFileName string
+
 func writeIntoFile(bodyBytes []byte) {
-	file, err := os.OpenFile("data.log", os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
+	file, err := os.OpenFile(dataFileName, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
 	if err != nil {
 		panic(err)
 	}
@@ -23,7 +25,7 @@ func writeIntoFile(bodyBytes []byte) {
 }
 
 func loadDataFromFile() {
-	file, err := os.Open("data.log")
+	file, err := os.Open(dataFileName)
 	if err != nil {
 		if os.IsNotExist(err) {
 			fmt.Println("No existing data file found. Starting with an empty store.")

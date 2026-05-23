@@ -11,6 +11,7 @@ import (
 )
 
 func getEnvInt(key string, defaultValue int) int {
+	// Check if the environment variable is set and parse it as an integer. If not set or invalid, return the default value.
 	value := os.Getenv(key)
 	if value == "" {
 		return defaultValue
@@ -25,10 +26,12 @@ func getEnvInt(key string, defaultValue int) int {
 }
 
 func main() {
+	// Load environment variables from .env file
 	err := godotenv.Load()
 	if err != nil {
 		panic(err)
 	}
+
 	// Command-line flags
 	port := flag.Int("port", 8080, "Port to run server on")
 	nodeID := flag.Int("node-id", 1, "Unique node ID")
@@ -39,9 +42,6 @@ func main() {
 	)
 
 	flag.Parse()
-
-	// Load persisted key/value data
-	loadDataFromFile()
 
 	numberOfNodes = getEnvInt("NUMBER_OF_NODES", 3)
 	fmt.Printf("Loaded NUMBER_OF_NODES=%d from .env\n", numberOfNodes)
@@ -56,9 +56,16 @@ func main() {
 	}
 
 	// Register handlers
+	http.HandleFunc("/", handleRoot)
 	http.HandleFunc("/put", handlePostRequest)
 	http.HandleFunc("/get", handleGetRequest)
-	http.HandleFunc("/", handleRoot)
+	http.HandleFunc("/replicate", handleReplicateRequest)
+
+	// WAL file for the current node. Each line is a JSON-encoded PutRequest.
+	dataFileName = fmt.Sprintf("data-%d.log", cluster.Self.ID)
+
+	// Load persisted key/value data
+	loadDataFromFile()
 
 	// Start HTTP server
 	addr := fmt.Sprintf(":%d", *port)

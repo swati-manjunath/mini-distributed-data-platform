@@ -36,7 +36,6 @@ func handlePostRequest(w http.ResponseWriter, r *http.Request) {
 	// Forward if this node is not the owner.
 	targetNodeID := hashRing.getNodeForKey(req.Key)
 	if !isLocalNode(targetNodeID) {
-		fmt.Printf("Forwarding post request for key %q to node %d\n", req.Key, targetNodeID)
 		forwardPostRequest(w, targetNodeID, bodyBytes, req)
 		return
 	}
@@ -50,7 +49,10 @@ func handlePostRequest(w http.ResponseWriter, r *http.Request) {
 		req.Value,
 		cluster.Self.ID,
 	)
-	fmt.Printf("Current store: %v\n", store)
+
+	// Send replication request to other nodes
+	replicaNode := getReplicaNode(targetNodeID)
+	sendReplicationRequest(w, bodyBytes, req, replicaNode)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -63,20 +65,39 @@ func handleGetRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targetNodeID := hashRing.getNodeForKey(r.URL.Query().Get("key"))
+	requestKey := r.URL.Query().Get("key")
+	targetNodeID := hashRing.getNodeForKey(requestKey)
+	replicaNode := getReplicaNode(targetNodeID)
 
-	if !isLocalNode(targetNodeID) {
-		fmt.Printf("Forwarding get request for key %q to node %d\n", r.URL.Query().Get("key"), targetNodeID)
-		forwardGetRequest(w, targetNodeID, r.URL.Query().Get("key"))
+	if !isLocalNode(targetNodeID) && cluster.Self.ID != replicaNode.ID {
+		forwardGetRequest(w, targetNodeID, requestKey)
 		return
 	}
 
-	value, exists := getFromStore(r.URL.Query().Get("key"))
-	if !exists {
+	value, exists := getFromStore(requestKey)
+
+	shouldReturn := tryReplicaRead(exists, replicaNode, w, requestKey)
+	if shouldReturn {
+		return
+	}
+
+	if exists {
+		fmt.Fprintf(w, "Value for key '%s': %s", requestKey, value)
+	} else {
 		http.Error(w, "Key not found", http.StatusNotFound)
-		return
+
 	}
-	fmt.Fprintf(w, "Value for key '%s': %s", r.URL.Query().Get("key"), value)
+}
+
+func tryReplicaRead(exists bool, replicaNode Node, w http.ResponseWriter, requestKey string) bool {
+	// Current failover logic assumes a single replica per primary.
+	// Multi-hop forwarding would require loop-prevention metadata.
+	if !exists && replicaNode.ID != cluster.Self.ID {
+		fmt.Printf("Forwarding request to replica node %d for read\n", replicaNode.ID)
+		forwardGetRequest(w, replicaNode.ID, requestKey)
+		return true
+	}
+	return false
 }
 
 func handleRoot(w http.ResponseWriter, r *http.Request) {
@@ -86,4 +107,36 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		"status": "ok",
 		"node":   cluster.Self.Address,
 	})
+}
+
+func handleReplicateRequest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	defer r.Body.Close()
+
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Unable to read request body", http.StatusBadRequest)
+		return
+	}
+	var req PutRequest
+	if err := json.Unmarshal(bodyBytes, &req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	writeIntoFile(bodyBytes)
+	putInStore(req.Key, req.Value)
+
+	fmt.Printf("Replicated key=%q value=%q on node %d\n",
+		req.Key,
+		req.Value,
+		cluster.Self.ID,
+	)
+	fmt.Printf("Current store: %v\n", store)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"replicated"}`))
 }

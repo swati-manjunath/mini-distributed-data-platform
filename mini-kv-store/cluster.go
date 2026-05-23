@@ -30,7 +30,7 @@ func parseCluster(clusterStr string, selfID int) Config {
 		var id int
 		_, err := fmt.Sscanf(parts[0], "%d", &id)
 		if err != nil {
-			panic("invalid node ID in cluster entry: " + entry)
+			panic("Invalid node ID in cluster entry: " + entry)
 		}
 
 		node := Node{
@@ -47,7 +47,7 @@ func parseCluster(clusterStr string, selfID int) Config {
 	}
 
 	if !found {
-		panic(fmt.Sprintf("self node ID %d not found in cluster config", selfID))
+		panic(fmt.Sprintf("Self node ID %d not found in cluster config", selfID))
 	}
 
 	return Config{
@@ -87,7 +87,7 @@ func forwardPostRequest(w http.ResponseWriter, targetNodeID int, bodyBytes []byt
 	}
 
 	fmt.Printf(
-		"Forwarding key %q to node %d at %s\n",
+		"Forwarding post request for key %q to node %d at %s\n",
 		req.Key,
 		targetNodeID,
 		targetAddress,
@@ -135,7 +135,7 @@ func forwardGetRequest(w http.ResponseWriter, targetNodeID int, key string) {
 	}
 
 	fmt.Printf(
-		"Forwarding key %q to node %d at %s\n",
+		"Forwarding get request for key %q to node %d at %s\n",
 		key,
 		targetNodeID,
 		targetAddress,
@@ -159,4 +159,48 @@ func forwardGetRequest(w http.ResponseWriter, targetNodeID int, key string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(responseBody)
+}
+
+func getReplicaNode(primaryNodeID int) Node {
+	for _, node := range cluster.Nodes {
+		if node.ID == primaryNodeID {
+			if node.ID == numberOfNodes {
+				return cluster.Nodes[0]
+			}
+			return cluster.Nodes[node.ID]
+		}
+	}
+	panic("Primary node ID not found in cluster config")
+}
+
+func sendReplicationRequest(w http.ResponseWriter, bodyBytes []byte, req PutRequest, targetNode Node) {
+	fmt.Printf(
+		"Forwarding key %q to node %d at %s for replication\n",
+		req.Key,
+		targetNode.ID,
+		targetNode.Address,
+	)
+
+	resp, err := http.Post(
+		fmt.Sprintf("http://%s/replicate", targetNode.Address),
+		"application/json",
+		bytes.NewReader(bodyBytes),
+	)
+	if err != nil {
+		http.Error(w, "Failed to forward request", http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Propagate any error from the destination node.
+	if resp.StatusCode != http.StatusOK {
+		responseBody, _ := io.ReadAll(resp.Body)
+		http.Error(w, string(responseBody), resp.StatusCode)
+		return
+	}
+
+	// Return success to the original client.
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"forwarded"}`))
 }
