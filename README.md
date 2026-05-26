@@ -1,63 +1,101 @@
 # mini-distributed-data-platform
 
-A simple Go-based in-memory key-value store with optional clustering support, JSON POST ingestion, and a write-ahead log (WAL).
+A lightweight distributed data platform with a Go-based clustered key-value store, Kafka broker orchestration, a Python metrics producer, and a Python Kafka consumer for debugging.
 
-This project exposes a lightweight HTTP API for storing and retrieving string values by key. Incoming write requests are appended to a node-specific WAL file named `data-<node-id>.log` and are loaded back on startup. The project also supports a small multi-node cluster mode where keys are routed to owning nodes.
+This repository combines a simple `mini-kv-store` service with a Kafka-based metrics pipeline.
 
-## Highlights
+## Components
 
-- Single-node and basic cluster mode (configured via flags or `.env`).
-- `POST /put` accepts JSON payloads and will forward to the owning node when running in cluster mode.
-- `GET /get?key=<key>` returns the stored value for a given key.
-- In-memory store protected by a mutex for concurrency safety.
-- Write-ahead logging to node-specific WAL files (`data-<node-id>.log`); malformed lines are skipped on load to avoid crashes.
+- `mini-kv-store/` — Go in-memory key/value store with optional cluster routing, JSON HTTP API, and node-local WAL persistence.
+- `kafka/` — Docker Compose setup for a single Kafka KRaft broker listening on `localhost:9092`.
+- `metrics-agent/` — Python agent that collects host CPU/memory metrics and publishes them to Kafka topic `system-metrics`.
+- `consumer-debug/` — Python Kafka consumer that prints metrics from the `system-metrics` topic for debugging.
 
 ## Architecture
 
-The service is built around a single-node HTTP server with optional cluster-aware routing. Each node keeps an in-memory key/value store, persists writes to a local WAL file, and forwards requests to the owning node when needed.
+The project is split into two core subsystems:
+
+1. Key-value store subsystem
+   - `mini-kv-store` accepts `POST /put` and `GET /get`.
+   - Writes are appended to `data-<node-id>.log` and reloaded on startup.
+   - Optional cluster mode forwards writes to the owning node.
+
+2. Metrics pipeline
+   - `metrics-agent` collects system metrics and publishes them to Kafka.
+   - `consumer-debug` subscribes to the `system-metrics` topic and prints incoming messages.
+
+For a detailed architecture overview, see `ARCHITECTURE.md`.
 
 ```mermaid
-graph LR
-  Client["Client"]
-  Node1["Node 1"]
-  Node2["Node 2"]
-  Node3["Node 3"]
-  WAL1["data-1.log"]
-  WAL2["data-2.log"]
-  WAL3["data-3.log"]
-
-  Client -->|PUT /put| Node1
-  Node1 -->|hash/routing| Node2
-  Node1 -->|local write| WAL1
-  Node2 -->|local write| WAL2
-  Node3 -->|local write| WAL3
+graph TB
+  MetricsAgent["metrics-agent"] -->|publish system metrics| Kafka["Kafka broker"]
+  Kafka -->|topic: system-metrics| Consumer["consumer-debug"]
+  Client["Client"] -->|HTTP /put,/get| KVStore["mini-kv-store"]
+  KVStore -->|WAL persistence| WAL["data-<node-id>.log"]
 ```
 
-## Build and Run
+## Getting Started
 
-Run from the repository root:
+### Requirements
 
-```bash
-cd c:/Users/vidya/OneDrive/Documents/Swati/mini-distributed-data-platform/mini-kv-store
+- Go 1.26 or later
+- Docker and Docker Compose
+- Python 3.11+ (or compatible)
+- Python packages: `psutil`, `kafka-python`
+
+### Start Kafka
+
+```powershell
+cd kafka
+docker compose up -d
+```
+
+The Kafka broker is configured to listen on `localhost:9092`.
+
+### Install Python dependencies
+
+```powershell
+python -m pip install -r metrics-agent/requirements.txt
+```
+
+### Run the metrics producer
+
+```powershell
+python metrics-agent/agent.py
+```
+
+This periodically publishes host metrics as JSON to Kafka topic `system-metrics`.
+
+### Run the consumer debugger
+
+```powershell
+python consumer-debug/consume-metrics.py
+```
+
+This reads the same `system-metrics` topic and prints each metric record.
+
+### Run the key-value store
+
+```powershell
+cd mini-kv-store
 go run .
 ```
 
 Or build a binary:
 
-```bash
+```powershell
+cd mini-kv-store
 go build -o mini-kv-store .
-./mini-kv-store -port 8080 -node-id 1 -cluster "1=127.0.0.1:8080,2=127.0.0.1:8081,3=127.0.0.1:8082"
+.\mini-kv-store -port 8080 -node-id 1 -cluster "1=127.0.0.1:8080,2=127.0.0.1:8081,3=127.0.0.1:8082"
 ```
 
-You can also set `NUMBER_OF_NODES` and other values in a `.env` file. The server prints the loaded `NUMBER_OF_NODES` at startup.
+### Example API usage
 
-## API
-
-### Store a value
+#### Store a value
 
 `POST /put`
 
-Request body (JSON):
+Request body:
 
 ```json
 {
@@ -66,19 +104,15 @@ Request body (JSON):
 }
 ```
 
-Example using PowerShell:
+Example:
 
 ```powershell
 Invoke-WebRequest -Uri "http://localhost:8080/put" -Method Post -ContentType "application/json" -Body '{"key":"cpu","value":"80"}'
 ```
 
-When running in cluster mode the server computes the owner for the key. If another node owns the key, the request is forwarded to that node and the originating node will not re-write the value locally.
-
-### Retrieve a value
+#### Retrieve a value
 
 `GET /get?key=<key>`
-
-Example:
 
 ```powershell
 Invoke-WebRequest -Uri "http://localhost:8080/get?key=cpu" -Method Get
@@ -86,22 +120,20 @@ Invoke-WebRequest -Uri "http://localhost:8080/get?key=cpu" -Method Get
 
 ## Notes
 
-- The server stores values in memory; data is only reloaded from a node-specific WAL file (`data-<node-id>.log`) on startup.
-- The WAL file is node-specific. On startup the loader skips malformed lines and continues.
-- Cluster configuration: pass `-cluster` flag. `NUMBER_OF_NODES` can be set in `.env`. Node IDs in the config are 1-based (e.g., `1=127.0.0.1:8080`). Key hashing uses a zero-based index internally; the code maps that index to the node list correctly to avoid ID/index mismatches.
+- `mini-kv-store` stores values in memory and persists writes to a node-specific WAL file (`data-<node-id>.log`).
+- In cluster mode, the service routes each key to its owning node and avoids duplicate writes on the origin node.
+- Kafka is used only for the metrics pipeline; the key-value store currently operates independently of Kafka.
+- The Python metrics agent publishes metrics as JSON strings, and the debug consumer prints decoded JSON values from Kafka.
 
-## File layout
+## File Layout
 
-- `Main.go` — server setup and route registration
-- `handlers.go` — request handlers for `/put` and `/get`, forwarding logic
-- `store.go` — shared in-memory store and mutex
-- `wal.go` — write-ahead logging helper
+- `mini-kv-store/` — Go-based key-value store service
+- `kafka/docker-compose.yaml` — Kafka broker configuration for local development
+- `metrics-agent/agent.py` — main metrics publisher loop
+- `metrics-agent/metrics.py` — CPU/memory collection logic
+- `metrics-agent/producer.py` — Kafka producer wrapper
+- `consumer-debug/consume-metrics.py` — Kafka consumer for debugging metrics
 
-## Recent fixes
+## Changelog
 
-- Fixed forwarded-request handling so only the owner writes to storage and WAL.
-- Fixed WAL reading to avoid consuming request bodies before JSON decoding.
-
-## Requirements
-
-- Go 1.26 or later
+See `CHANGELOG.md` for recent changes and project history.

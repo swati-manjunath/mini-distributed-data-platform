@@ -3,9 +3,12 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
-- Added `CHANGELOG.md` for project history tracking.
-- Upgraded README with detailed mini key-value store description and usage.
-- Fixed startup ordering so cluster config is parsed before WAL file initialization, ensuring `data-<node-id>.log` uses the correct local node ID.
+- Added Kafka broker orchestration under `kafka/docker-compose.yaml` for a local KRaft broker.
+- Added `metrics-agent/` Python producer to publish host CPU/memory metrics to Kafka topic `system-metrics`.
+- Added `consumer-debug/` Python Kafka consumer to inspect the `system-metrics` stream.
+- Updated root `README.md` with documentation for Kafka, metrics-agent, consumer-debug, and the key-value store.
+- Added `ARCHITECTURE.md` with an end-to-end architecture overview.
+- Included Python requirements for metrics and Kafka integration.
 
 ## [2026-05-20]
 - Add clustering support (basic node config and key routing).
