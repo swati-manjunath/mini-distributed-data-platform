@@ -18,12 +18,9 @@ def get_memory_usage():
 def collect_metrics():  
     metrics = {
                 "host": SYSTEM_NAME,
-                "timestamp": int(time.time()),
+                "ts": int(time.time()),
                 "cpu_percent": get_cpu_usage(),
                 "memory_percent": get_memory_usage()
             }
-
-    # 3. Convert to JSON string
-    json_output = json.dumps(metrics, indent=4)
-
-    return json_output
+    
+    return metrics

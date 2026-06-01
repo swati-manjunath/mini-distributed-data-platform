@@ -3,10 +3,14 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+- Added `flink-jobs/` Flink SQL pipeline to consume `system-metrics` from Kafka, aggregate metrics, and send results to `mini-kv-store` via HTTP.
+- Updated `kafka/docker-compose.yaml` listener configuration to support both Docker-internal broker access (`broker:9092`) and host-local access (`localhost:9092`).
+- Updated `flink-jobs/config.py` to use `host.docker.internal:8082` for containerized Flink to reach the host `mini-kv-store` service.
+- Fixed `flink-jobs/sinks/kv_store_sink.py` to send valid `key` / `value` JSON payloads to the key-value store API.
 - Added Kafka broker orchestration under `kafka/docker-compose.yaml` for a local KRaft broker.
 - Added `metrics-agent/` Python producer to publish host CPU/memory metrics to Kafka topic `system-metrics`.
 - Added `consumer-debug/` Python Kafka consumer to inspect the `system-metrics` stream.
-- Updated root `README.md` with documentation for Kafka, metrics-agent, consumer-debug, and the key-value store.
+- Updated root `README.md` with documentation for the Flink job, Kafka networking, metrics agent, consumer-debug, and the key-value store.
 - Added `ARCHITECTURE.md` with an end-to-end architecture overview.
 - Included Python requirements for metrics and Kafka integration.
 

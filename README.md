@@ -7,8 +7,9 @@ This repository combines a simple `mini-kv-store` service with a Kafka-based met
 ## Components
 
 - `mini-kv-store/` — Go in-memory key/value store with optional cluster routing, JSON HTTP API, and node-local WAL persistence.
-- `kafka/` — Docker Compose setup for a single Kafka KRaft broker listening on `localhost:9092`.
+- `kafka/` — Docker Compose setup for a local Kafka KRaft broker that supports both container and host access.
 - `metrics-agent/` — Python agent that collects host CPU/memory metrics and publishes them to Kafka topic `system-metrics`.
+- `flink-jobs/` — Flink SQL pipeline that consumes metrics from Kafka, aggregates them, and writes results into `mini-kv-store` via HTTP.
 - `consumer-debug/` — Python Kafka consumer that prints metrics from the `system-metrics` topic for debugging.
 
 ## Architecture
@@ -22,6 +23,7 @@ The project is split into two core subsystems:
 
 2. Metrics pipeline
    - `metrics-agent` collects system metrics and publishes them to Kafka.
+   - `flink-jobs` consumes the `system-metrics` stream, aggregates metrics, and writes the aggregated results into `mini-kv-store` via HTTP.
    - `consumer-debug` subscribes to the `system-metrics` topic and prints incoming messages.
 
 For a detailed architecture overview, see `ARCHITECTURE.md`.
@@ -29,6 +31,8 @@ For a detailed architecture overview, see `ARCHITECTURE.md`.
 ```mermaid
 graph TB
   MetricsAgent["metrics-agent"] -->|publish system metrics| Kafka["Kafka broker"]
+  Kafka -->|topic: system-metrics| Flink["flink-jobs"]
+  Flink -->|HTTP writes| KVStore["mini-kv-store"]
   Kafka -->|topic: system-metrics| Consumer["consumer-debug"]
   Client["Client"] -->|HTTP /put,/get| KVStore["mini-kv-store"]
   KVStore -->|WAL persistence| WAL["data-<node-id>.log"]
@@ -73,6 +77,14 @@ python consumer-debug/consume-metrics.py
 ```
 
 This reads the same `system-metrics` topic and prints each metric record.
+
+### Run the Flink job
+
+```powershell
+python flink-jobs/main.py
+```
+
+This starts the Flink SQL pipeline that reads metrics from Kafka and writes aggregated results to `mini-kv-store`.
 
 ### Run the key-value store
 
@@ -122,13 +134,16 @@ Invoke-WebRequest -Uri "http://localhost:8080/get?key=cpu" -Method Get
 
 - `mini-kv-store` stores values in memory and persists writes to a node-specific WAL file (`data-<node-id>.log`).
 - In cluster mode, the service routes each key to its owning node and avoids duplicate writes on the origin node.
-- Kafka is used only for the metrics pipeline; the key-value store currently operates independently of Kafka.
+- Kafka is used for the metrics pipeline, and `flink-jobs` bridges Kafka with the key-value store by sending aggregated metrics to `mini-kv-store`.
+- `flink-jobs/config.py` uses `host.docker.internal` so containerized Flink can reach the host `mini-kv-store` service on Windows/macOS.
+- Use `localhost` from the host machine, but use `host.docker.internal` from inside Docker containers when accessing host services like `mini-kv-store`.
 - The Python metrics agent publishes metrics as JSON strings, and the debug consumer prints decoded JSON values from Kafka.
 
 ## File Layout
 
 - `mini-kv-store/` — Go-based key-value store service
 - `kafka/docker-compose.yaml` — Kafka broker configuration for local development
+- `flink-jobs/` — Flink SQL pipeline for Kafka metrics aggregation and HTTP sink to the key-value store
 - `metrics-agent/agent.py` — main metrics publisher loop
 - `metrics-agent/metrics.py` — CPU/memory collection logic
 - `metrics-agent/producer.py` — Kafka producer wrapper
