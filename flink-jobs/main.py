@@ -1,5 +1,5 @@
 from pyflink.table import EnvironmentSettings, TableEnvironment
-from config import INPUT_TOPIC, KAFKA_BROKER, CONSUMER_GROUP, CPU_ALERT_THRESHOLD, MEMORY_ALERT_THRESHOLD, WINDOW_SLIDE, WINDOW_SIZE
+from config import INPUT_TOPIC, KAFKA_BROKER, CONSUMER_GROUP, CPU_ALERT_THRESHOLD, MEMORY_ALERT_THRESHOLD, WINDOW_SIZE
 from models import metric_event
 from processor import aggregator as cpu_aggregator
 from sinks import kv_store_sink
@@ -29,7 +29,7 @@ def main():
     t_env.create_temporary_system_function("send_alert", kv_store_sink.send_alerts_to_microservice)
 
     # 5. Create the View (Aggregation Logic)
-    cpu_aggregator.register_window_aggregates(t_env, WINDOW_SLIDE, WINDOW_SIZE)
+    cpu_aggregator.register_window_aggregates(t_env, WINDOW_SIZE)
 
     # 6. Build the Execution Plan
     statement_set = t_env.create_statement_set()
@@ -38,7 +38,7 @@ def main():
     statement_set.add_insert_sql(f"""
     INSERT INTO execution_log
     SELECT 
-        send_metrics(host, avg_cpu, avg_memory)
+        send_metrics(host, avg_cpu, avg_memory, UNIX_TIMESTAMP(CAST(window_start AS STRING)))
     FROM metric_aggregates
     """)
 
@@ -48,7 +48,7 @@ def main():
     statement_set.add_insert_sql(f"""
     INSERT INTO execution_log
     SELECT 
-        send_alert(host, avg_cpu, avg_memory)
+        send_alert(host, avg_cpu, avg_memory, UNIX_TIMESTAMP(CAST(window_start AS STRING)))
     FROM metric_aggregates
     WHERE avg_cpu > {CPU_ALERT_THRESHOLD} 
        OR avg_memory > {MEMORY_ALERT_THRESHOLD}

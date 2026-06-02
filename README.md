@@ -139,6 +139,15 @@ Invoke-WebRequest -Uri "http://localhost:8080/get?key=cpu" -Method Get
 - Use `localhost` from the host machine, but use `host.docker.internal` from inside Docker containers when accessing host services like `mini-kv-store`.
 - The Python metrics agent publishes metrics as JSON strings, and the debug consumer prints decoded JSON values from Kafka.
 
+## Recent changes (2026-06-02)
+
+- Converted Flink metric aggregation to a tumbling window (non-overlapping windows).
+- Flink now includes the `window_start` timestamp in aggregated results; the pipeline sends `window_start_ms` to the key-value store and uses `key = "{host}_{window_start_ms}"` to store per-window values.
+- The Flink sink UDFs and `main.py` were updated to pass the window start timestamp into HTTP writes.
+- `mini-kv-store` routing logic updated: target node is computed by hashing the `host` only (timestamps stripped) so per-window writes map to the correct owning node.
+- Kafka listener config was updated to expose both container-internal (`broker:9092`) and host-local (`localhost:9092`) endpoints for convenience during development.
+- `flink-jobs/config.py` now uses `host.docker.internal` for containerized Flink to reach the host `mini-kv-store` on Windows/macOS.
+
 ## File Layout
 
 - `mini-kv-store/` — Go-based key-value store service

@@ -3,7 +3,7 @@ def get_sink_ddl(table_name):
     # Replace with 'jdbc' or 'hbase' for real KV Store
     return f"""
     CREATE TABLE {table_name} (
-        host STRING,
+        CONCAT(host, ts) AS host STRING,
         avg_cpu DOUBLE,
         avg_memory DOUBLE,
         window_start TIMESTAMP(3),

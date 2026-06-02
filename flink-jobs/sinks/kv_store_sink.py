@@ -5,12 +5,18 @@ from pyflink.table.udf import udf
 from config import KV_STORE_API_URL
 
 # 1. METRICS UDF (sends everything)
-@udf(input_types=[DataTypes.STRING(), DataTypes.DOUBLE(), DataTypes.DOUBLE()], 
+@udf(input_types=[DataTypes.STRING(), DataTypes.DOUBLE(), DataTypes.DOUBLE(), DataTypes.BIGINT()], 
      result_type=DataTypes.STRING()) 
-def send_metrics_to_microservice(host, avg_cpu, avg_memory):
-    metric_payload = {"host": host, "cpu": avg_cpu, "memory": avg_memory, "type": "metric"}
+def send_metrics_to_microservice(host, avg_cpu, avg_memory, window_start_ms):
+    metric_payload = {
+        "host": host, 
+        "cpu": avg_cpu, 
+        "memory": avg_memory, 
+        "type": "metric",
+        "window_start_ms": window_start_ms
+    }
     payload = {
-        "key": host,
+        "key": f"{host}_{window_start_ms}",
         "value": json.dumps(metric_payload)
     }
     try:
@@ -21,13 +27,18 @@ def send_metrics_to_microservice(host, avg_cpu, avg_memory):
         return f"Metric Error: {str(e)}"
 
 # 2. ALERTS UDF (sends only high usage)
-# FIX: Added the missing @udf decorator here
-@udf(input_types=[DataTypes.STRING(), DataTypes.DOUBLE(), DataTypes.DOUBLE()], 
+@udf(input_types=[DataTypes.STRING(), DataTypes.DOUBLE(), DataTypes.DOUBLE(), DataTypes.BIGINT()], 
      result_type=DataTypes.STRING()) 
-def send_alerts_to_microservice(host, avg_cpu, avg_memory):
-    alert_payload = {"host": host, "cpu": avg_cpu, "memory": avg_memory, "type": "ALERT"}
+def send_alerts_to_microservice(host, avg_cpu, avg_memory, window_start_ms):
+    alert_payload = {
+        "host": host, 
+        "cpu": avg_cpu, 
+        "memory": avg_memory, 
+        "type": "ALERT",
+        "window_start_ms": window_start_ms
+    }
     payload = {
-        "key": host,
+        "key": f"{host}_{window_start_ms}",
         "value": json.dumps(alert_payload)
     }
     try:

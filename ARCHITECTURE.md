@@ -16,13 +16,26 @@ This repository defines a small distributed data platform with two main subsyste
 ## High-level flow
 
 ```mermaid
-graph TB
-  MetricsAgent["metrics-agent"] -->|publish system metrics| Kafka["Kafka broker"]
-  Kafka -->|topic: system-metrics| Flink["flink-jobs"]
-  Flink -->|HTTP writes| KVStore["mini-kv-store"]
-  Kafka -->|topic: system-metrics| Consumer["consumer-debug"]
-  Client["Client"] -->|HTTP /put,/get| KVStore["mini-kv-store"]
-  KVStore -->|persist to WAL| WAL["data-<node-id>.log"]
+flowchart LR
+  subgraph MetricsPipeline[Metrics Pipeline]
+    A[metrics-agent]
+    B[Kafka (system-metrics)]
+    C[flink-jobs (TUMBLE window)]
+    D[consumer-debug]
+  end
+
+  subgraph KVStoreSub[Key-Value Store]
+    K[mini-kv-store]
+    W[WAL: data-<node-id>.log]
+  end
+
+  A -->|publish JSON| B
+  B -->|topic: system-metrics| C
+  C -->|HTTP POST key=host_windowstart| K
+  B -->|topic: system-metrics| D
+  K -->|persist to WAL| W
+
+  click K "mini-kv-store/" "mini-kv-store service"
 ```
 
 ## Component details
@@ -56,8 +69,8 @@ graph TB
 ### `flink-jobs`
 
 - Flink SQL application that reads from Kafka topic `system-metrics`.
-- Performs windowed aggregation and emits both metric and alert payloads.
-- Sends aggregated results to `mini-kv-store` using HTTP POST with `key`/`value` JSON payloads.
+- Uses tumbling windows (TUMBLE) to build non-overlapping aggregates; each aggregate includes `window_start` and `window_end` timestamps.
+- Emits metric and alert payloads and sends them to `mini-kv-store` using HTTP POST with `key`/`value` JSON payloads. The sink uses `key = host_windowstart` to store one entry per host per window.
 - Uses `host.docker.internal` in Docker to reach the host `mini-kv-store` service when running inside containers.
 
 ### `consumer-debug`

@@ -8,7 +8,6 @@ CPU_ALERT_THRESHOLD = 90.0
 MEMORY_ALERT_THRESHOLD = 90.0
 
 # Window Configs
-WINDOW_SLIDE = "5"  # Seconds
 WINDOW_SIZE = "30"  # Seconds
 
 # External Services

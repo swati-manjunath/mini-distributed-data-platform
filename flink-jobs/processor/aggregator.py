@@ -1,6 +1,6 @@
 from pyflink.table import TableEnvironment
 
-def register_window_aggregates(t_env: TableEnvironment, slide_sec, size_sec):
+def register_window_aggregates(t_env: TableEnvironment, size_sec):
     """
     Registers the core sliding window view.
     """
@@ -13,12 +13,11 @@ def register_window_aggregates(t_env: TableEnvironment, slide_sec, size_sec):
         window_start,
         window_end
     FROM TABLE(
-        HOP(
+        TUMBLE(
             TABLE metrics,
             DESCRIPTOR(event_time),
-            INTERVAL '{slide_sec}' SECOND,
             INTERVAL '{size_sec}' SECOND
-        )
+            )
     )
     GROUP BY
         host,

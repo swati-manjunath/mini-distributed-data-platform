@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
+
+var SEPARATOR string = "_"
 
 func handlePostRequest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -33,8 +36,9 @@ func handlePostRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	hostName := strings.Split(req.Key, SEPARATOR)[0]
 	// Forward if this node is not the owner.
-	targetNodeID := hashRing.getNodeForKey(req.Key)
+	targetNodeID := hashRing.getNodeForKey(hostName)
 	if !isLocalNode(targetNodeID) {
 		forwardPostRequest(w, targetNodeID, bodyBytes, req)
 		return
@@ -66,7 +70,8 @@ func handleGetRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	requestKey := r.URL.Query().Get("key")
-	targetNodeID := hashRing.getNodeForKey(requestKey)
+	hostName := strings.Split(requestKey, SEPARATOR)[0]
+	targetNodeID := hashRing.getNodeForKey(hostName)
 	replicaNode := getReplicaNode(targetNodeID)
 
 	if !isLocalNode(targetNodeID) && cluster.Self.ID != replicaNode.ID {
