@@ -17,12 +17,12 @@ This repository defines a small distributed data platform with two main subsyste
 
 ```mermaid
 flowchart LR
-  A[metrics-agent]
-  B[Kafka (system-metrics)]
-  C[flink-jobs (TUMBLE window)]
-  D[consumer-debug]
-  K[mini-kv-store]
-  W[WAL: data-node-id.log]
+  A["metrics-agent"]
+  B["Kafka (system-metrics)"]
+  C["flink-jobs (TUMBLE window)"]
+  D["consumer-debug"]
+  K["mini-kv-store"]
+  W["WAL: data-node-id.log"]
 
   A -->|publish JSON| B
   B -->|topic: system-metrics| C
