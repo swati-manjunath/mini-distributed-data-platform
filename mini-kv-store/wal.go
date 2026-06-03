@@ -49,6 +49,9 @@ func loadDataFromFile() {
 		}
 
 		store[req.Key] = req.Value
+
+		hostName := getHostNameFromKey(req.Key)
+		index[hostName] = append(index[hostName], req.Key) // Update history index
 	}
 
 	if err := scanner.Err(); err != nil {

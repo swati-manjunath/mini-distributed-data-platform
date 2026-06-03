@@ -1,3 +1,7 @@
 Invoke-WebRequest -Uri "http://localhost:8082/put" -Method Post -ContentType "application/json" -Body '{"key":"cpu","value":"80"}'
 
 Invoke-WebRequest -Uri "http://localhost:8080/get?key=cpu"
+
+(Invoke-WebRequest -Uri "http://localhost:8080/history?key=LAPTOP-TV94GMOM" -UseBasicParsing).Content
+
+Invoke-WebRequest -Uri "http://localhost:8080/latest?key=LAPTOP-TV94GMOM"

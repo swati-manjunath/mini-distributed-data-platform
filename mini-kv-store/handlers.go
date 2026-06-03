@@ -36,7 +36,7 @@ func handlePostRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hostName := strings.Split(req.Key, SEPARATOR)[0]
+	hostName := getHostNameFromKey(req.Key)
 	// Forward if this node is not the owner.
 	targetNodeID := hashRing.getNodeForKey(hostName)
 	if !isLocalNode(targetNodeID) {
@@ -47,7 +47,7 @@ func handlePostRequest(w http.ResponseWriter, r *http.Request) {
 	// This node owns the key: persist and store locally.
 	writeIntoFile(bodyBytes)
 
-	putInStore(req.Key, req.Value)
+	putInStore(req.Key, req.Value, hostName)
 	fmt.Printf("Stored key=%q value=%q on node %d\n",
 		req.Key,
 		req.Value,
@@ -70,8 +70,7 @@ func handleGetRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	requestKey := r.URL.Query().Get("key")
-	hostName := strings.Split(requestKey, SEPARATOR)[0]
-	targetNodeID := hashRing.getNodeForKey(hostName)
+	targetNodeID := hashRing.getNodeForKey(requestKey)
 	replicaNode := getReplicaNode(targetNodeID)
 
 	if !isLocalNode(targetNodeID) && cluster.Self.ID != replicaNode.ID {
@@ -132,8 +131,9 @@ func handleReplicateRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	hostName := getHostNameFromKey(req.Key)
 	writeIntoFile(bodyBytes)
-	putInStore(req.Key, req.Value)
+	putInStore(req.Key, req.Value, hostName)
 
 	fmt.Printf("Replicated key=%q value=%q on node %d\n",
 		req.Key,
@@ -144,4 +144,8 @@ func handleReplicateRequest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status":"replicated"}`))
+}
+
+func getHostNameFromKey(key string) string {
+	return strings.Split(key, SEPARATOR)[0]
 }

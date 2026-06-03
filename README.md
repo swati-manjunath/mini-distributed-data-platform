@@ -6,7 +6,7 @@ This repository combines a simple `mini-kv-store` service with a Kafka-based met
 
 ## Components
 
-- `mini-kv-store/` — Go in-memory key/value store with optional cluster routing, JSON HTTP API, and node-local WAL persistence.
+- `mini-kv-store/` — Go in-memory key/value store with optional cluster routing, JSON HTTP API, node-local WAL persistence, and analytics read endpoints (`GET /history`, `GET /latest`).
 - `kafka/` — Docker Compose setup for a local Kafka KRaft broker that supports both container and host access.
 - `metrics-agent/` — Python agent that collects host CPU/memory metrics and publishes them to Kafka topic `system-metrics`.
 - `flink-jobs/` — Flink SQL pipeline that consumes metrics from Kafka, aggregates them, and writes results into `mini-kv-store` via HTTP.
@@ -17,7 +17,7 @@ This repository combines a simple `mini-kv-store` service with a Kafka-based met
 The project is split into two core subsystems:
 
 1. Key-value store subsystem
-   - `mini-kv-store` accepts `POST /put` and `GET /get`.
+   - `mini-kv-store` accepts `POST /put`, `GET /get`, `GET /history`, and `GET /latest`.
    - Writes are appended to `data-<node-id>.log` and reloaded on startup.
    - Optional cluster mode forwards writes to the owning node.
 
@@ -128,6 +128,26 @@ Invoke-WebRequest -Uri "http://localhost:8080/put" -Method Post -ContentType "ap
 
 ```powershell
 Invoke-WebRequest -Uri "http://localhost:8080/get?key=cpu" -Method Get
+```
+
+#### Retrieve the full history for a key
+
+`GET /history?key=<key>`
+
+Returns a JSON object with `key` and `history` array values.
+
+```powershell
+Invoke-WebRequest -Uri "http://localhost:8080/history?key=cpu" -Method Get
+```
+
+#### Retrieve the latest value for a key
+
+`GET /latest?key=<key>`
+
+Returns a JSON object with `key` and `latest` value.
+
+```powershell
+Invoke-WebRequest -Uri "http://localhost:8080/latest?key=cpu" -Method Get
 ```
 
 ## Notes

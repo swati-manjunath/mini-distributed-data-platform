@@ -39,6 +39,8 @@ flowchart LR
 - Exposes:
   - `POST /put` for writing key/value pairs.
   - `GET /get?key=<key>` for reading values.
+  - `GET /history?key=<key>` for reading the full value history.
+  - `GET /latest?key=<key>` for reading the most recent value.
 - Uses an in-memory map protected by a mutex.
 - Appends writes to a local WAL file on every successful write.
 - Supports optional cluster mode where keys are routed to an owning node.

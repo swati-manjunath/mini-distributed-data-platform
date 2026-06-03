@@ -99,7 +99,7 @@ func forwardPostRequest(w http.ResponseWriter, targetNodeID int, bodyBytes []byt
 		bytes.NewReader(bodyBytes),
 	)
 	if err != nil {
-		http.Error(w, "Failed to forward request", http.StatusInternalServerError)
+		http.Error(w, "Failed to forward post request", http.StatusInternalServerError)
 		return
 	}
 	defer resp.Body.Close()
@@ -144,7 +144,7 @@ func forwardGetRequest(w http.ResponseWriter, targetNodeID int, key string) {
 		fmt.Sprintf("http://%s/get?key=%s", targetAddress, key),
 	)
 	if err != nil {
-		http.Error(w, "Failed to forward request", http.StatusInternalServerError)
+		http.Error(w, "Failed to forward get request", http.StatusInternalServerError)
 		return
 	}
 	defer resp.Body.Close()
@@ -203,4 +203,92 @@ func sendReplicationRequest(w http.ResponseWriter, bodyBytes []byte, req PutRequ
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status":"forwarded"}`))
+}
+
+func forwardGetHistoryRequest(w http.ResponseWriter, targetNodeID int, key string) {
+	var targetAddress string
+	found := false
+
+	for _, node := range cluster.Nodes {
+		if node.ID == targetNodeID {
+			targetAddress = node.Address
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		http.Error(w, "Target node not found in cluster config", http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Printf(
+		"Forwarding get history request for key %q to node %d at %s\n",
+		key,
+		targetNodeID,
+		targetAddress,
+	)
+	resp, err := http.Get(
+		fmt.Sprintf("http://%s/history?key=%s", targetAddress, key),
+	)
+	if err != nil {
+		http.Error(w, "Failed to forward get history request", http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Propagate any error from the destination node.
+	if resp.StatusCode != http.StatusOK {
+		responseBody, _ := io.ReadAll(resp.Body)
+		http.Error(w, string(responseBody), resp.StatusCode)
+		return
+	}
+	responseBody, _ := io.ReadAll(resp.Body)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(responseBody)
+}
+
+func forwardGetLatestRequest(w http.ResponseWriter, targetNodeID int, key string) {
+	var targetAddress string
+	found := false
+
+	for _, node := range cluster.Nodes {
+		if node.ID == targetNodeID {
+			targetAddress = node.Address
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		http.Error(w, "Target node not found in cluster config", http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Printf(
+		"Forwarding get latest request for key %q to node %d at %s\n",
+		key,
+		targetNodeID,
+		targetAddress,
+	)
+	resp, err := http.Get(
+		fmt.Sprintf("http://%s/latest?key=%s", targetAddress, key),
+	)
+	if err != nil {
+		http.Error(w, "Failed to forward get latestrequest", http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Propagate any error from the destination node.
+	if resp.StatusCode != http.StatusOK {
+		responseBody, _ := io.ReadAll(resp.Body)
+		http.Error(w, string(responseBody), resp.StatusCode)
+		return
+	}
+	responseBody, _ := io.ReadAll(resp.Body)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(responseBody)
 }

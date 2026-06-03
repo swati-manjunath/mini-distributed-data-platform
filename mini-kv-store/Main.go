@@ -60,6 +60,8 @@ func main() {
 	http.HandleFunc("/put", handlePostRequest)
 	http.HandleFunc("/get", handleGetRequest)
 	http.HandleFunc("/replicate", handleReplicateRequest)
+	http.HandleFunc("/history", handleHistoryRequest)
+	http.HandleFunc("/latest", handleLatestRequest)
 
 	// WAL file for the current node. Each line is a JSON-encoded PutRequest.
 	dataFileName = fmt.Sprintf("data-%d.log", cluster.Self.ID)
