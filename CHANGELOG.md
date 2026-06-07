@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [2026-06-07]
 - Documented `GET /history` and `GET /latest` analytics endpoints in `README.md` and `ARCHITECTURE.md`.
+- Added `ARCHITECTURAL_DICISIONS.md` to capture architectural decisions and design rationale for the distribution and analytics pipeline.
 - Clarified the `mini-kv-store/analytics-handlers.go` implementation of analytics read endpoints returning structured JSON responses.
 
 ## [2026-06-03]

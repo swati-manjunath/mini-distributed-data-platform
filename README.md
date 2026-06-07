@@ -27,6 +27,7 @@ The project is split into two core subsystems:
    - `consumer-debug` subscribes to the `system-metrics` topic and prints incoming messages.
 
 For a detailed architecture overview, see `ARCHITECTURE.md`.
+For design and architectural decisions, see `ARCHITECTURAL_DICISIONS.md`.
 
 ```mermaid
 graph TB
@@ -177,6 +178,7 @@ Invoke-WebRequest -Uri "http://localhost:8080/latest?key=cpu" -Method Get
 - `metrics-agent/metrics.py` — CPU/memory collection logic
 - `metrics-agent/producer.py` — Kafka producer wrapper
 - `consumer-debug/consume-metrics.py` — Kafka consumer for debugging metrics
+- `ARCHITECTURAL_DICISIONS.md` — architectural decisions and design rationale for the platform
 
 ## Performance Benchmark
 
