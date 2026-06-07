@@ -61,7 +61,6 @@ func (h HashRing) getNodeForKey(key string) int {
 	hasher.Write([]byte(key))
 	hash := hasher.Sum32()
 
-	fmt.Printf("Key '%s' hashed to %d\n", key, hash)
 	return int((hash % uint32(numberOfNodes)) + 1) // Node IDs are 1-based
 }
 
@@ -82,7 +81,7 @@ func forwardPostRequest(w http.ResponseWriter, targetNodeID int, bodyBytes []byt
 	}
 
 	if !found {
-		http.Error(w, "Target node not found in cluster config", http.StatusInternalServerError)
+		fmt.Printf("Target node %d not found in cluster config\n", targetNodeID)
 		return
 	}
 
@@ -99,7 +98,7 @@ func forwardPostRequest(w http.ResponseWriter, targetNodeID int, bodyBytes []byt
 		bytes.NewReader(bodyBytes),
 	)
 	if err != nil {
-		http.Error(w, "Failed to forward post request", http.StatusInternalServerError)
+		fmt.Printf("Failed to forward post request to node %d: %v\n", targetNodeID, err)
 		return
 	}
 	defer resp.Body.Close()
@@ -110,11 +109,6 @@ func forwardPostRequest(w http.ResponseWriter, targetNodeID int, bodyBytes []byt
 		http.Error(w, string(responseBody), resp.StatusCode)
 		return
 	}
-
-	// Return success to the original client.
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"forwarded"}`))
 }
 
 func forwardGetRequest(w http.ResponseWriter, targetNodeID int, key string) {
@@ -130,7 +124,7 @@ func forwardGetRequest(w http.ResponseWriter, targetNodeID int, key string) {
 	}
 
 	if !found {
-		http.Error(w, "Target node not found in cluster config", http.StatusInternalServerError)
+		fmt.Printf("Target node %d not found in cluster config\n", targetNodeID)
 		return
 	}
 
@@ -144,7 +138,7 @@ func forwardGetRequest(w http.ResponseWriter, targetNodeID int, key string) {
 		fmt.Sprintf("http://%s/get?key=%s", targetAddress, key),
 	)
 	if err != nil {
-		http.Error(w, "Failed to forward get request", http.StatusInternalServerError)
+		fmt.Printf("Failed to forward get request to node %d: %v\n", targetNodeID, err)
 		return
 	}
 	defer resp.Body.Close()
@@ -155,10 +149,6 @@ func forwardGetRequest(w http.ResponseWriter, targetNodeID int, key string) {
 		http.Error(w, string(responseBody), resp.StatusCode)
 		return
 	}
-	responseBody, _ := io.ReadAll(resp.Body)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(responseBody)
 }
 
 func getReplicaNode(primaryNodeID int) Node {
@@ -187,7 +177,7 @@ func sendReplicationRequest(w http.ResponseWriter, bodyBytes []byte, req PutRequ
 		bytes.NewReader(bodyBytes),
 	)
 	if err != nil {
-		http.Error(w, "Failed to forward request", http.StatusInternalServerError)
+		fmt.Printf("Failed to forward replication request to node %d: %v\n", targetNode.ID, err)
 		return
 	}
 	defer resp.Body.Close()
@@ -198,11 +188,6 @@ func sendReplicationRequest(w http.ResponseWriter, bodyBytes []byte, req PutRequ
 		http.Error(w, string(responseBody), resp.StatusCode)
 		return
 	}
-
-	// Return success to the original client.
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"forwarded"}`))
 }
 
 func forwardGetHistoryRequest(w http.ResponseWriter, targetNodeID int, key string) {
@@ -218,7 +203,7 @@ func forwardGetHistoryRequest(w http.ResponseWriter, targetNodeID int, key strin
 	}
 
 	if !found {
-		http.Error(w, "Target node not found in cluster config", http.StatusInternalServerError)
+		fmt.Printf("Target node %d not found in cluster config\n", targetNodeID)
 		return
 	}
 
@@ -232,7 +217,7 @@ func forwardGetHistoryRequest(w http.ResponseWriter, targetNodeID int, key strin
 		fmt.Sprintf("http://%s/history?key=%s", targetAddress, key),
 	)
 	if err != nil {
-		http.Error(w, "Failed to forward get history request", http.StatusInternalServerError)
+		fmt.Printf("Failed to forward get history request to node %d: %v\n", targetNodeID, err)
 		return
 	}
 	defer resp.Body.Close()
@@ -243,10 +228,6 @@ func forwardGetHistoryRequest(w http.ResponseWriter, targetNodeID int, key strin
 		http.Error(w, string(responseBody), resp.StatusCode)
 		return
 	}
-	responseBody, _ := io.ReadAll(resp.Body)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(responseBody)
 }
 
 func forwardGetLatestRequest(w http.ResponseWriter, targetNodeID int, key string) {
@@ -262,8 +243,7 @@ func forwardGetLatestRequest(w http.ResponseWriter, targetNodeID int, key string
 	}
 
 	if !found {
-		http.Error(w, "Target node not found in cluster config", http.StatusInternalServerError)
-		return
+		fmt.Printf("Target node %d not found in cluster config\n", targetNodeID)
 	}
 
 	fmt.Printf(
@@ -276,7 +256,7 @@ func forwardGetLatestRequest(w http.ResponseWriter, targetNodeID int, key string
 		fmt.Sprintf("http://%s/latest?key=%s", targetAddress, key),
 	)
 	if err != nil {
-		http.Error(w, "Failed to forward get latestrequest", http.StatusInternalServerError)
+		fmt.Printf("Failed to forward get latest request to node %d: %v\n", targetNodeID, err)
 		return
 	}
 	defer resp.Body.Close()
@@ -287,8 +267,4 @@ func forwardGetLatestRequest(w http.ResponseWriter, targetNodeID int, key string
 		http.Error(w, string(responseBody), resp.StatusCode)
 		return
 	}
-	responseBody, _ := io.ReadAll(resp.Body)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(responseBody)
 }

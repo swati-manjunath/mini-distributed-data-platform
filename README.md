@@ -6,7 +6,7 @@ This repository combines a simple `mini-kv-store` service with a Kafka-based met
 
 ## Components
 
-- `mini-kv-store/` — Go in-memory key/value store with optional cluster routing, JSON HTTP API, node-local WAL persistence, and analytics read endpoints (`GET /history`, `GET /latest`).
+- `mini-kv-store/` — Go in-memory key/value store with optional cluster routing, JSON HTTP API, node-local WAL persistence, and analytics read endpoints (`GET /history`, `GET /latest`) implemented by `mini-kv-store/analytics-handlers.go`.
 - `kafka/` — Docker Compose setup for a local Kafka KRaft broker that supports both container and host access.
 - `metrics-agent/` — Python agent that collects host CPU/memory metrics and publishes them to Kafka topic `system-metrics`.
 - `flink-jobs/` — Flink SQL pipeline that consumes metrics from Kafka, aggregates them, and writes results into `mini-kv-store` via HTTP.
@@ -134,7 +134,7 @@ Invoke-WebRequest -Uri "http://localhost:8080/get?key=cpu" -Method Get
 
 `GET /history?key=<key>`
 
-Returns a JSON object with `key` and `history` array values.
+Returns a JSON object with `key` and `history` array values via `mini-kv-store/analytics-handlers.go`.
 
 ```powershell
 Invoke-WebRequest -Uri "http://localhost:8080/history?key=cpu" -Method Get
@@ -144,7 +144,7 @@ Invoke-WebRequest -Uri "http://localhost:8080/history?key=cpu" -Method Get
 
 `GET /latest?key=<key>`
 
-Returns a JSON object with `key` and `latest` value.
+Returns a JSON object with `key` and `latest` value, or a JSON error payload when the key is not found.
 
 ```powershell
 Invoke-WebRequest -Uri "http://localhost:8080/latest?key=cpu" -Method Get
@@ -177,6 +177,50 @@ Invoke-WebRequest -Uri "http://localhost:8080/latest?key=cpu" -Method Get
 - `metrics-agent/metrics.py` — CPU/memory collection logic
 - `metrics-agent/producer.py` — Kafka producer wrapper
 - `consumer-debug/consume-metrics.py` — Kafka consumer for debugging metrics
+
+## Performance Benchmark
+
+The platform was benchmarked to evaluate the end-to-end performance of the distributed data pipeline and the key-value store APIs. The benchmark measured the time taken for requests to propagate through the system and for data to become available via the exposed endpoints.
+
+### End-to-End Pipeline Benchmark
+
+The benchmark script publishes metric messages to the Kafka topic `system-metrics` and continuously polls the `mini-kv-store` using the `/latest` endpoint until the updated value is observed. The elapsed time represents the end-to-end latency of the pipeline:
+
+```
+Metrics Agent → Kafka → Flink → mini-kv-store
+```
+
+Twenty benchmark iterations were executed, with five messages sent during each iteration. Successful executions produced end-to-end latencies that were typically between **0.76 s and 1.37 s**, with an average latency of approximately **0.95 s** (excluding a single 8 ms outlier). A number of iterations reached the configured timeout before an updated value was detected and were therefore reported as `ERROR` by the benchmark script.
+
+### API Benchmark Results
+
+The following execution times were obtained during benchmarking.
+
+| Endpoint              | Benchmark Time (s) |
+| --------------------- | -----------------: |
+| Write (1000 requests) |            42.8646 |
+| Read (1000 / 5000)    |              1.665 |
+| History (1000 / 1000) |              2.264 |
+| History (1000 / 5000) |              2.740 |
+
+Additional benchmark runs produced the following results:
+
+| Endpoint              | Benchmark Time (s) |
+| --------------------- | -----------------: |
+| Write (1000 requests) |           139.3589 |
+| Read (1000 / 5000)    |             98.359 |
+| History (1000 / 1000) |             35.556 |
+| History (1000 / 5000) |            128.116 |
+
+| Endpoint              | Benchmark Time (s) |
+| --------------------- | -----------------: |
+| Write (1000 requests) |           87.85801 |
+| Read (1000 / 5000)    |            8.59962 |
+| History (1000 / 1000) |           6.933098 |
+| History (1000 / 5000) |           13.36172 |
+
+These results demonstrate the functionality of the distributed data platform under different workloads and provide an estimate of the latency associated with write, read, and history retrieval operations, as well as the end-to-end streaming pipeline from Kafka through Flink to the key-value store.
+
 
 ## Changelog
 

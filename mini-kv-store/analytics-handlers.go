@@ -20,6 +20,7 @@ func handleHistoryRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
 	requestKey := r.URL.Query().Get("key")
 	targetNodeID := hashRing.getNodeForKey(requestKey)
 	replicaNode := getReplicaNode(targetNodeID)
@@ -32,6 +33,7 @@ func handleHistoryRequest(w http.ResponseWriter, r *http.Request) {
 	value, exists := getHistoryFromStore(requestKey)
 
 	shouldReturn := tryReplicaRead(exists, replicaNode, w, requestKey)
+
 	if shouldReturn {
 		return
 	}
@@ -55,6 +57,7 @@ func handleLatestRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
 	requestKey := r.URL.Query().Get("key")
 	targetNodeID := hashRing.getNodeForKey(requestKey)
 	replicaNode := getReplicaNode(targetNodeID)
@@ -67,6 +70,7 @@ func handleLatestRequest(w http.ResponseWriter, r *http.Request) {
 	value, exists := getLatestFromStore(requestKey)
 
 	shouldReturn := tryReplicaRead(exists, replicaNode, w, requestKey)
+
 	if shouldReturn {
 		return
 	}

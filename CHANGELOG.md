@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026-06-07]
+- Documented `GET /history` and `GET /latest` analytics endpoints in `README.md` and `ARCHITECTURE.md`.
+- Clarified the `mini-kv-store/analytics-handlers.go` implementation of analytics read endpoints returning structured JSON responses.
+
 ## [2026-06-03]
 - Changed `mini-kv-store` routing logic: target node is now computed by hashing the `host` only (timestamp stripped) to ensure consistent ownership regardless of per-window timestamps.
 - Added `GET /history` and `GET /latest` endpoints to `mini-kv-store` for analytics reads, returning JSON `key`/`history` and `key`/`latest` payloads.

@@ -1,24 +1,22 @@
 package main
 
 import (
-	"fmt"
 	"sync"
 )
 
 var (
 	store = make(map[string]string)
-	index = make(map[string][]string) // For storing history of values for each key
+	index = make(map[string][]string)
 	mu    sync.RWMutex
 )
 
 func putInStore(key, value string, hostName string) {
 	mu.Lock()
 	store[key] = value
-	// Store the key in the history index for the host so we can lookup values
-	index[hostName] = append(index[hostName], key) // Append key to history
+	index[hostName] = append(index[hostName], key)
 	mu.Unlock()
-
 }
+
 func getFromStore(key string) (string, bool) {
 	mu.RLock()
 	value, exists := store[key]
@@ -52,15 +50,11 @@ func getHistoryFromStore(key string) ([]string, bool) {
 
 func getLatestFromStore(key string) (string, bool) {
 	mu.RLock()
-	fmt.Printf("Index %v\n", index)
-	fmt.Printf("key %s\n", key)
 	keys, ok := index[key]
 	if !ok || len(keys) == 0 {
-		fmt.Printf("No keys found for host %s\n", key)
 		return "", false
 	}
-	latest := keys[len(keys)-1] // Get the most recent key for this host
-	fmt.Printf("Latest key for host %s is %s\n", key, latest)
+	latest := keys[len(keys)-1]
 	mu.RUnlock()
 	mu.RLock()
 	value, exists := store[latest]

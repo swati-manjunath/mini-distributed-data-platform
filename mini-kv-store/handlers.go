@@ -17,14 +17,12 @@ func handlePostRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	// Read the request body once so it can be reused if forwarding.
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Unable to read request body", http.StatusBadRequest)
 		return
 	}
 
-	// Parse JSON.
 	var req PutRequest
 	if err := json.Unmarshal(bodyBytes, &req); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
@@ -37,26 +35,19 @@ func handlePostRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hostName := getHostNameFromKey(req.Key)
-	// Forward if this node is not the owner.
 	targetNodeID := hashRing.getNodeForKey(hostName)
+
 	if !isLocalNode(targetNodeID) {
 		forwardPostRequest(w, targetNodeID, bodyBytes, req)
 		return
 	}
 
-	// This node owns the key: persist and store locally.
 	writeIntoFile(bodyBytes)
 
 	putInStore(req.Key, req.Value, hostName)
-	fmt.Printf("Stored key=%q value=%q on node %d\n",
-		req.Key,
-		req.Value,
-		cluster.Self.ID,
-	)
 
-	// Send replication request to other nodes
 	replicaNode := getReplicaNode(targetNodeID)
-	sendReplicationRequest(w, bodyBytes, req, replicaNode)
+	go sendReplicationRequest(w, bodyBytes, req, replicaNode)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -132,18 +123,10 @@ func handleReplicateRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hostName := getHostNameFromKey(req.Key)
-	writeIntoFile(bodyBytes)
-	putInStore(req.Key, req.Value, hostName)
 
-	fmt.Printf("Replicated key=%q value=%q on node %d\n",
-		req.Key,
-		req.Value,
-		cluster.Self.ID,
-	)
-	fmt.Printf("Current store: %v\n", store)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"replicated"}`))
+	writeIntoFile(bodyBytes)
+
+	putInStore(req.Key, req.Value, hostName)
 }
 
 func getHostNameFromKey(key string) string {

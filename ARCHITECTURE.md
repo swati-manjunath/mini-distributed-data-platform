@@ -28,6 +28,7 @@ flowchart LR
   B -->|topic: system-metrics| C
   C -->|HTTP POST key=host_windowstart| K
   B -->|topic: system-metrics| D
+  Client["Client"] -->|HTTP GET /history,/latest| K
   K -->|persist to WAL| W
 ```
 
@@ -39,8 +40,8 @@ flowchart LR
 - Exposes:
   - `POST /put` for writing key/value pairs.
   - `GET /get?key=<key>` for reading values.
-  - `GET /history?key=<key>` for reading the full value history.
-  - `GET /latest?key=<key>` for reading the most recent value.
+  - `GET /history?key=<key>` for reading the full value history via `mini-kv-store/analytics-handlers.go`.
+  - `GET /latest?key=<key>` for reading the most recent value via `mini-kv-store/analytics-handlers.go`.
 - Uses an in-memory map protected by a mutex.
 - Appends writes to a local WAL file on every successful write.
 - Supports optional cluster mode where keys are routed to an owning node.
