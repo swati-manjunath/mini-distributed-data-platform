@@ -2,6 +2,8 @@
 
 A compact distributed data platform that combines a Go key-value store with a Kafka-based metrics pipeline. It is intended as a learning project for service routing, write-ahead logging, stream processing, and lightweight observability workflows.
 
+Technical blog: [Building a distributed data platform from scratch — engineering decisions](https://medium.com/@swati.manjunath15/building-a-distributed-data-platform-from-scratch-the-engineering-decisions-behind-the-components-b8d77122cbd9)
+
 ## What Is Included
 
 - `mini-kv-store/`: Go HTTP key-value store with cluster routing, single-replica replication, node-local WAL persistence, and analytics endpoints.
