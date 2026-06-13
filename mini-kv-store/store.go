@@ -33,18 +33,18 @@ func deleteFromStore(key string) {
 func getHistoryFromStore(key string) ([]string, bool) {
 	mu.RLock()
 	keys, ok := index[key]
-	mu.RUnlock()
 	if !ok || len(keys) == 0 {
+		mu.RUnlock()
 		return nil, false
 	}
 
+	keysCopy := append([]string(nil), keys...)
 	history := make([]string, 0, len(keys))
-	for _, k := range keys {
-		mu.RLock()
+	for _, k := range keysCopy {
 		v := store[k]
-		mu.RUnlock()
 		history = append(history, v)
 	}
+	mu.RUnlock()
 	return history, true
 }
 
@@ -52,11 +52,10 @@ func getLatestFromStore(key string) (string, bool) {
 	mu.RLock()
 	keys, ok := index[key]
 	if !ok || len(keys) == 0 {
+		mu.RUnlock()
 		return "", false
 	}
 	latest := keys[len(keys)-1]
-	mu.RUnlock()
-	mu.RLock()
 	value, exists := store[latest]
 	mu.RUnlock()
 	return value, exists

@@ -47,7 +47,7 @@ func handlePostRequest(w http.ResponseWriter, r *http.Request) {
 	putInStore(req.Key, req.Value, hostName)
 
 	replicaNode := getReplicaNode(targetNodeID)
-	go sendReplicationRequest(w, bodyBytes, req, replicaNode)
+	go sendReplicationRequest(bodyBytes, req, replicaNode)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -71,7 +71,7 @@ func handleGetRequest(w http.ResponseWriter, r *http.Request) {
 
 	value, exists := getFromStore(requestKey)
 
-	shouldReturn := tryReplicaRead(exists, replicaNode, w, requestKey)
+	shouldReturn := tryReplicaRead(exists, replicaNode, w, "/get", requestKey)
 	if shouldReturn {
 		return
 	}
@@ -84,12 +84,12 @@ func handleGetRequest(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func tryReplicaRead(exists bool, replicaNode Node, w http.ResponseWriter, requestKey string) bool {
+func tryReplicaRead(exists bool, replicaNode Node, w http.ResponseWriter, path string, requestKey string) bool {
 	// Current failover logic assumes a single replica per primary.
 	// Multi-hop forwarding would require loop-prevention metadata.
 	if !exists && replicaNode.ID != cluster.Self.ID {
 		fmt.Printf("Forwarding request to replica node %d for read\n", replicaNode.ID)
-		forwardGetRequest(w, replicaNode.ID, requestKey)
+		forwardGetPathRequest(w, replicaNode.ID, path, requestKey)
 		return true
 	}
 	return false
@@ -127,6 +127,10 @@ func handleReplicateRequest(w http.ResponseWriter, r *http.Request) {
 	writeIntoFile(bodyBytes)
 
 	putInStore(req.Key, req.Value, hostName)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"ok"}`))
 }
 
 func getHostNameFromKey(key string) string {

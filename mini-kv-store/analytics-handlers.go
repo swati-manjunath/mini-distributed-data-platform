@@ -32,7 +32,7 @@ func handleHistoryRequest(w http.ResponseWriter, r *http.Request) {
 
 	value, exists := getHistoryFromStore(requestKey)
 
-	shouldReturn := tryReplicaRead(exists, replicaNode, w, requestKey)
+	shouldReturn := tryReplicaRead(exists, replicaNode, w, "/history", requestKey)
 
 	if shouldReturn {
 		return
@@ -69,7 +69,7 @@ func handleLatestRequest(w http.ResponseWriter, r *http.Request) {
 
 	value, exists := getLatestFromStore(requestKey)
 
-	shouldReturn := tryReplicaRead(exists, replicaNode, w, requestKey)
+	shouldReturn := tryReplicaRead(exists, replicaNode, w, "/latest", requestKey)
 
 	if shouldReturn {
 		return

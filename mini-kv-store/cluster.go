@@ -6,6 +6,7 @@ import (
 	"hash/fnv"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -61,27 +62,39 @@ func (h HashRing) getNodeForKey(key string) int {
 	hasher.Write([]byte(key))
 	hash := hasher.Sum32()
 
-	return int((hash % uint32(numberOfNodes)) + 1) // Node IDs are 1-based
+	nodeIndex := int(hash % uint32(len(cluster.Nodes)))
+	return cluster.Nodes[nodeIndex].ID
 }
 
 func isLocalNode(node int) bool {
 	return node == cluster.Self.ID
 }
 
-func forwardPostRequest(w http.ResponseWriter, targetNodeID int, bodyBytes []byte, req PutRequest) {
-	var targetAddress string
-	found := false
-
+func findNodeAddress(targetNodeID int) (string, bool) {
 	for _, node := range cluster.Nodes {
 		if node.ID == targetNodeID {
-			targetAddress = node.Address
-			found = true
-			break
+			return node.Address, true
 		}
 	}
 
+	return "", false
+}
+
+func copyForwardedResponse(w http.ResponseWriter, resp *http.Response) {
+	if contentType := resp.Header.Get("Content-Type"); contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+
+	w.WriteHeader(resp.StatusCode)
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		fmt.Printf("Failed to copy forwarded response: %v\n", err)
+	}
+}
+
+func forwardPostRequest(w http.ResponseWriter, targetNodeID int, bodyBytes []byte, req PutRequest) {
+	targetAddress, found := findNodeAddress(targetNodeID)
 	if !found {
-		fmt.Printf("Target node %d not found in cluster config\n", targetNodeID)
+		http.Error(w, fmt.Sprintf("Target node %d not found in cluster config", targetNodeID), http.StatusBadGateway)
 		return
 	}
 
@@ -99,71 +112,56 @@ func forwardPostRequest(w http.ResponseWriter, targetNodeID int, bodyBytes []byt
 	)
 	if err != nil {
 		fmt.Printf("Failed to forward post request to node %d: %v\n", targetNodeID, err)
+		http.Error(w, "Failed to forward post request", http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
 
-	// Propagate any error from the destination node.
-	if resp.StatusCode != http.StatusOK {
-		responseBody, _ := io.ReadAll(resp.Body)
-		http.Error(w, string(responseBody), resp.StatusCode)
-		return
-	}
+	copyForwardedResponse(w, resp)
 }
 
 func forwardGetRequest(w http.ResponseWriter, targetNodeID int, key string) {
-	var targetAddress string
-	found := false
+	forwardGetPathRequest(w, targetNodeID, "/get", key)
+}
 
-	for _, node := range cluster.Nodes {
-		if node.ID == targetNodeID {
-			targetAddress = node.Address
-			found = true
-			break
-		}
-	}
-
+func forwardGetPathRequest(w http.ResponseWriter, targetNodeID int, path string, key string) {
+	targetAddress, found := findNodeAddress(targetNodeID)
 	if !found {
-		fmt.Printf("Target node %d not found in cluster config\n", targetNodeID)
+		http.Error(w, fmt.Sprintf("Target node %d not found in cluster config", targetNodeID), http.StatusBadGateway)
 		return
 	}
 
 	fmt.Printf(
-		"Forwarding get request for key %q to node %d at %s\n",
+		"Forwarding %s request for key %q to node %d at %s\n",
+		path,
 		key,
 		targetNodeID,
 		targetAddress,
 	)
 	resp, err := http.Get(
-		fmt.Sprintf("http://%s/get?key=%s", targetAddress, key),
+		fmt.Sprintf("http://%s%s?key=%s", targetAddress, path, url.QueryEscape(key)),
 	)
 	if err != nil {
-		fmt.Printf("Failed to forward get request to node %d: %v\n", targetNodeID, err)
+		fmt.Printf("Failed to forward %s request to node %d: %v\n", path, targetNodeID, err)
+		http.Error(w, "Failed to forward get request", http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
 
-	// Propagate any error from the destination node.
-	if resp.StatusCode != http.StatusOK {
-		responseBody, _ := io.ReadAll(resp.Body)
-		http.Error(w, string(responseBody), resp.StatusCode)
-		return
-	}
+	copyForwardedResponse(w, resp)
 }
 
 func getReplicaNode(primaryNodeID int) Node {
-	for _, node := range cluster.Nodes {
+	for i, node := range cluster.Nodes {
 		if node.ID == primaryNodeID {
-			if node.ID == numberOfNodes {
-				return cluster.Nodes[0]
-			}
-			return cluster.Nodes[node.ID]
+			replicaIndex := (i + 1) % len(cluster.Nodes)
+			return cluster.Nodes[replicaIndex]
 		}
 	}
 	panic("Primary node ID not found in cluster config")
 }
 
-func sendReplicationRequest(w http.ResponseWriter, bodyBytes []byte, req PutRequest, targetNode Node) {
+func sendReplicationRequest(bodyBytes []byte, req PutRequest, targetNode Node) {
 	fmt.Printf(
 		"Forwarding key %q to node %d at %s for replication\n",
 		req.Key,
@@ -182,89 +180,17 @@ func sendReplicationRequest(w http.ResponseWriter, bodyBytes []byte, req PutRequ
 	}
 	defer resp.Body.Close()
 
-	// Propagate any error from the destination node.
 	if resp.StatusCode != http.StatusOK {
 		responseBody, _ := io.ReadAll(resp.Body)
-		http.Error(w, string(responseBody), resp.StatusCode)
+		fmt.Printf("Replication request to node %d failed with %d: %s\n", targetNode.ID, resp.StatusCode, string(responseBody))
 		return
 	}
 }
 
 func forwardGetHistoryRequest(w http.ResponseWriter, targetNodeID int, key string) {
-	var targetAddress string
-	found := false
-
-	for _, node := range cluster.Nodes {
-		if node.ID == targetNodeID {
-			targetAddress = node.Address
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		fmt.Printf("Target node %d not found in cluster config\n", targetNodeID)
-		return
-	}
-
-	fmt.Printf(
-		"Forwarding get history request for key %q to node %d at %s\n",
-		key,
-		targetNodeID,
-		targetAddress,
-	)
-	resp, err := http.Get(
-		fmt.Sprintf("http://%s/history?key=%s", targetAddress, key),
-	)
-	if err != nil {
-		fmt.Printf("Failed to forward get history request to node %d: %v\n", targetNodeID, err)
-		return
-	}
-	defer resp.Body.Close()
-
-	// Propagate any error from the destination node.
-	if resp.StatusCode != http.StatusOK {
-		responseBody, _ := io.ReadAll(resp.Body)
-		http.Error(w, string(responseBody), resp.StatusCode)
-		return
-	}
+	forwardGetPathRequest(w, targetNodeID, "/history", key)
 }
 
 func forwardGetLatestRequest(w http.ResponseWriter, targetNodeID int, key string) {
-	var targetAddress string
-	found := false
-
-	for _, node := range cluster.Nodes {
-		if node.ID == targetNodeID {
-			targetAddress = node.Address
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		fmt.Printf("Target node %d not found in cluster config\n", targetNodeID)
-	}
-
-	fmt.Printf(
-		"Forwarding get latest request for key %q to node %d at %s\n",
-		key,
-		targetNodeID,
-		targetAddress,
-	)
-	resp, err := http.Get(
-		fmt.Sprintf("http://%s/latest?key=%s", targetAddress, key),
-	)
-	if err != nil {
-		fmt.Printf("Failed to forward get latest request to node %d: %v\n", targetNodeID, err)
-		return
-	}
-	defer resp.Body.Close()
-
-	// Propagate any error from the destination node.
-	if resp.StatusCode != http.StatusOK {
-		responseBody, _ := io.ReadAll(resp.Body)
-		http.Error(w, string(responseBody), resp.StatusCode)
-		return
-	}
+	forwardGetPathRequest(w, targetNodeID, "/latest", key)
 }

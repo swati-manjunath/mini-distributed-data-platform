@@ -11,7 +11,6 @@ import (
 )
 
 func getEnvInt(key string, defaultValue int) int {
-	// Check if the environment variable is set and parse it as an integer. If not set or invalid, return the default value.
 	value := os.Getenv(key)
 	if value == "" {
 		return defaultValue
@@ -26,9 +25,8 @@ func getEnvInt(key string, defaultValue int) int {
 }
 
 func main() {
-	// Load environment variables from .env file
-	err := godotenv.Load()
-	if err != nil {
+	// Load local overrides when a .env file exists. Defaults keep a fresh clone runnable.
+	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
 		panic(err)
 	}
 
@@ -43,11 +41,18 @@ func main() {
 
 	flag.Parse()
 
-	numberOfNodes = getEnvInt("NUMBER_OF_NODES", 3)
-	fmt.Printf("Loaded NUMBER_OF_NODES=%d from .env\n", numberOfNodes)
-
 	// Parse cluster configuration
 	cluster = parseCluster(*clusterFlag, *nodeID)
+	numberOfNodes = len(cluster.Nodes)
+
+	configuredNodeCount := getEnvInt("NUMBER_OF_NODES", numberOfNodes)
+	if configuredNodeCount != numberOfNodes {
+		panic(fmt.Sprintf(
+			"NUMBER_OF_NODES=%d does not match cluster node count=%d",
+			configuredNodeCount,
+			numberOfNodes,
+		))
+	}
 
 	fmt.Printf("Node %d starting at %s\n", cluster.Self.ID, cluster.Self.Address)
 	fmt.Println("Known cluster nodes:")

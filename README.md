@@ -1,210 +1,138 @@
-# mini-distributed-data-platform
+# Mini Distributed Data Platform
 
-A lightweight distributed data platform with a Go-based clustered key-value store, Kafka broker orchestration, a Python metrics producer, and a Python Kafka consumer for debugging.
+A compact distributed data platform that combines a Go key-value store with a Kafka-based metrics pipeline. It is intended as a learning project for service routing, write-ahead logging, stream processing, and lightweight observability workflows.
 
-This repository combines a simple `mini-kv-store` service with a Kafka-based metrics pipeline.
+## What Is Included
 
-## Components
-
-- `mini-kv-store/` — Go in-memory key/value store with optional cluster routing, JSON HTTP API, node-local WAL persistence, and analytics read endpoints (`GET /history`, `GET /latest`) implemented by `mini-kv-store/analytics-handlers.go`.
-- `kafka/` — Docker Compose setup for a local Kafka KRaft broker that supports both container and host access.
-- `metrics-agent/` — Python agent that collects host CPU/memory metrics and publishes them to Kafka topic `system-metrics`.
-- `flink-jobs/` — Flink SQL pipeline that consumes metrics from Kafka, aggregates them, and writes results into `mini-kv-store` via HTTP.
-- `consumer-debug/` — Python Kafka consumer that prints metrics from the `system-metrics` topic for debugging.
+- `mini-kv-store/`: Go HTTP key-value store with cluster routing, single-replica replication, node-local WAL persistence, and analytics endpoints.
+- `kafka/`: Docker Compose setup for a local Kafka KRaft broker.
+- `metrics-agent/`: Python producer that collects host CPU and memory metrics and publishes them to Kafka.
+- `flink-jobs/`: PyFlink pipeline that aggregates Kafka metrics and writes results into the key-value store.
+- `consumer-debug/`: Python Kafka consumer for inspecting raw metric events.
+- `benchmarking-scripts/`: Small scripts for API and end-to-end latency experiments.
 
 ## Architecture
 
-The project is split into two core subsystems:
-
-1. Key-value store subsystem
-   - `mini-kv-store` accepts `POST /put`, `GET /get`, `GET /history`, and `GET /latest`.
-   - Writes are appended to `data-<node-id>.log` and reloaded on startup.
-   - Optional cluster mode forwards writes to the owning node.
-
-2. Metrics pipeline
-   - `metrics-agent` collects system metrics and publishes them to Kafka.
-   - `flink-jobs` consumes the `system-metrics` stream, aggregates metrics, and writes the aggregated results into `mini-kv-store` via HTTP.
-   - `consumer-debug` subscribes to the `system-metrics` topic and prints incoming messages.
-
-For a detailed architecture overview, see `ARCHITECTURE.md`.
-For design and architectural decisions, see `ARCHITECTURAL_DICISIONS.md`.
-
 ```mermaid
-graph TB
-  MetricsAgent["metrics-agent"] -->|publish system metrics| Kafka["Kafka broker"]
-  Kafka -->|topic: system-metrics| Flink["flink-jobs"]
-  Flink -->|HTTP writes| KVStore["mini-kv-store"]
-  Kafka -->|topic: system-metrics| Consumer["consumer-debug"]
-  Client["Client"] -->|HTTP /put,/get| KVStore["mini-kv-store"]
-  KVStore -->|WAL persistence| WAL["data-<node-id>.log"]
+flowchart LR
+  Agent["metrics-agent"] -->|JSON metrics| Kafka["Kafka: system-metrics"]
+  Kafka --> Flink["flink-jobs"]
+  Flink -->|HTTP writes| Store["mini-kv-store"]
+  Kafka --> Debug["consumer-debug"]
+  Client["HTTP client"] -->|/put /get /history /latest| Store
+  Store --> WAL["data-<node-id>.log"]
 ```
 
-## Getting Started
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full architecture overview and [ARCHITECTURAL_DECISIONS.md](ARCHITECTURAL_DECISIONS.md) for design notes.
 
-### Requirements
+## Requirements
 
-- Go 1.26 or later
+- Go 1.26.3 or compatible
+- Python 3.11+
 - Docker and Docker Compose
-- Python 3.11+ (or compatible)
-- Python packages: `psutil`, `kafka-python`
 
-### Start Kafka
+Install Python dependencies as needed:
+
+```powershell
+python -m pip install -r metrics-agent/requirements.txt
+python -m pip install -r flink-jobs/requirements.txt
+```
+
+## Quick Start
+
+### 1. Start Kafka
 
 ```powershell
 cd kafka
 docker compose up -d
 ```
 
-The Kafka broker is configured to listen on `localhost:9092`.
+Kafka is exposed to host processes at `localhost:9092`.
 
-### Install Python dependencies
+### 2. Start the key-value store
+
+From the repository root:
 
 ```powershell
-python -m pip install -r metrics-agent/requirements.txt
+go run ./mini-kv-store -port 8080 -node-id 1
 ```
 
-### Run the metrics producer
+For a three-node local cluster, start three terminals:
+
+```powershell
+go run ./mini-kv-store -port 8080 -node-id 1 -cluster "1=127.0.0.1:8080,2=127.0.0.1:8081,3=127.0.0.1:8082"
+go run ./mini-kv-store -port 8081 -node-id 2 -cluster "1=127.0.0.1:8080,2=127.0.0.1:8081,3=127.0.0.1:8082"
+go run ./mini-kv-store -port 8082 -node-id 3 -cluster "1=127.0.0.1:8080,2=127.0.0.1:8081,3=127.0.0.1:8082"
+```
+
+Optional local configuration can be copied from `.env.example`.
+
+### 3. Publish metrics
 
 ```powershell
 python metrics-agent/agent.py
 ```
 
-This periodically publishes host metrics as JSON to Kafka topic `system-metrics`.
-
-### Run the consumer debugger
+### 4. Inspect raw Kafka messages
 
 ```powershell
 python consumer-debug/consume-metrics.py
 ```
 
-This reads the same `system-metrics` topic and prints each metric record.
-
-### Run the Flink job
+### 5. Run the Flink pipeline
 
 ```powershell
 python flink-jobs/main.py
 ```
 
-This starts the Flink SQL pipeline that reads metrics from Kafka and writes aggregated results to `mini-kv-store`.
+The Flink job consumes `system-metrics`, computes tumbling-window aggregates, and writes aggregate and alert records to `mini-kv-store`.
 
-### Run the key-value store
+## API Examples
 
-```powershell
-cd mini-kv-store
-go run .
-```
-
-Or build a binary:
-
-```powershell
-cd mini-kv-store
-go build -o mini-kv-store .
-.\mini-kv-store -port 8080 -node-id 1 -cluster "1=127.0.0.1:8080,2=127.0.0.1:8081,3=127.0.0.1:8082"
-```
-
-### Example API usage
-
-#### Store a value
-
-`POST /put`
-
-Request body:
-
-```json
-{
-  "key": "cpu",
-  "value": "80"
-}
-```
-
-Example:
+Store a value:
 
 ```powershell
 Invoke-WebRequest -Uri "http://localhost:8080/put" -Method Post -ContentType "application/json" -Body '{"key":"cpu","value":"80"}'
 ```
 
-#### Retrieve a value
-
-`GET /get?key=<key>`
+Read a value:
 
 ```powershell
 Invoke-WebRequest -Uri "http://localhost:8080/get?key=cpu" -Method Get
 ```
 
-#### Retrieve the full history for a key
-
-`GET /history?key=<key>`
-
-Returns a JSON object with `key` and `history` array values via `mini-kv-store/analytics-handlers.go`.
+Read history for a host or logical key prefix:
 
 ```powershell
 Invoke-WebRequest -Uri "http://localhost:8080/history?key=cpu" -Method Get
 ```
 
-#### Retrieve the latest value for a key
-
-`GET /latest?key=<key>`
-
-Returns a JSON object with `key` and `latest` value, or a JSON error payload when the key is not found.
+Read the latest value for a host or logical key prefix:
 
 ```powershell
 Invoke-WebRequest -Uri "http://localhost:8080/latest?key=cpu" -Method Get
 ```
 
+## Development Checks
+
+```powershell
+gofmt -w mini-kv-store
+go test ./...
+python -m compileall benchmarking-scripts consumer-debug flink-jobs metrics-agent
+```
+
+The GitHub Actions workflow in `.github/workflows/ci.yml` runs these checks for pull requests and pushes.
 ## Notes
 
-- `mini-kv-store` stores values in memory and persists writes to a node-specific WAL file (`data-<node-id>.log`).
-- In cluster mode, the service routes each key to its owning node and avoids duplicate writes on the origin node.
-- Kafka is used for the metrics pipeline, and `flink-jobs` bridges Kafka with the key-value store by sending aggregated metrics to `mini-kv-store`.
-- `flink-jobs/config.py` uses `host.docker.internal` so containerized Flink can reach the host `mini-kv-store` service on Windows/macOS.
-- Use `localhost` from the host machine, but use `host.docker.internal` from inside Docker containers when accessing host services like `mini-kv-store`.
-- The Python metrics agent publishes metrics as JSON strings, and the debug consumer prints decoded JSON values from Kafka.
+- WAL files are named `data-<node-id>.log` and are intentionally ignored by Git.
+- Generated binaries are ignored; build them locally with `go build`.
+- Containerized Flink uses `host.docker.internal` to reach a host `mini-kv-store` process on Windows/macOS.
+- From host processes, use `localhost` for Kafka and key-value store access.
 
-## Recent changes (2026-06-02)
+## Project Status
 
-- Converted Flink metric aggregation to a tumbling window (non-overlapping windows).
-- Flink now includes the `window_start` timestamp in aggregated results; the pipeline sends `window_start_ms` to the key-value store and uses `key = "{host}_{window_start_ms}"` to store per-window values.
-- The Flink sink UDFs and `main.py` were updated to pass the window start timestamp into HTTP writes.
-- `mini-kv-store` routing logic updated: target node is computed by hashing the `host` only (timestamps stripped) so per-window writes map to the correct owning node.
-- Kafka listener config was updated to expose both container-internal (`broker:9092`) and host-local (`localhost:9092`) endpoints for convenience during development.
-- `flink-jobs/config.py` now uses `host.docker.internal` for containerized Flink to reach the host `mini-kv-store` on Windows/macOS.
-
-## File Layout
-
-- `mini-kv-store/` — Go-based key-value store service
-- `kafka/docker-compose.yaml` — Kafka broker configuration for local development
-- `flink-jobs/` — Flink SQL pipeline for Kafka metrics aggregation and HTTP sink to the key-value store
-- `metrics-agent/agent.py` — main metrics publisher loop
-- `metrics-agent/metrics.py` — CPU/memory collection logic
-- `metrics-agent/producer.py` — Kafka producer wrapper
-- `consumer-debug/consume-metrics.py` — Kafka consumer for debugging metrics
-- `ARCHITECTURAL_DICISIONS.md` — architectural decisions and design rationale for the platform
-
-## Performance Benchmark
-
-The platform was benchmarked to evaluate the performance of the key-value store APIs and the end-to-end streaming pipeline. The end-to-end benchmark measures the latency from publishing metrics to Kafka until the processed result becomes available in the `mini-kv-store` through the `/latest` endpoint.
-
-The pipeline under test is:
-
-```
-Metrics Agent → Kafka → Flink → mini-kv-store
-```
-
-Twenty benchmark iterations were executed, with five messages sent during each iteration. Successful executions produced end-to-end latencies that were typically between **0.76 s and 1.37 s**, with an average latency of approximately **0.95 s** (excluding a single 8 ms outlier). Some iterations reached the configured timeout before an updated value was detected and were reported as `ERROR` by the benchmark script.
-
-### API Benchmark Results
-
-The following table summarizes the benchmark results for the implemented endpoints.
-
-| Statistic   | Write (1000 requests) | Read (1000/5000) | History (1000/1000) | History (1000/5000) |
-| ----------- | --------------------: | ---------------: | ------------------: | ------------------: |
-| **Minimum** |             42.8646 s |          1.665 s |             2.264 s |             2.740 s |
-| **Maximum** |            139.3589 s |         98.359 s |            35.556 s |           128.116 s |
-| **Average** |            87.85801 s |        8.59962 s |          6.933098 s |          13.36172 s |
-
-These measurements provide an indication of the platform's performance under the tested workload. The write benchmark represents the time required to process 1000 write operations, while the read and history benchmarks measure retrieval performance for different dataset sizes. The end-to-end benchmark further demonstrates that the streaming pipeline from Kafka through Flink to the key-value store typically completes in approximately one second under successful executions.
-
+This is a small educational platform, not a production datastore. It currently demonstrates basic request routing, WAL replay, simple replication, Kafka ingestion, windowed processing, and HTTP sink integration.
 
 ## Changelog
 
-See `CHANGELOG.md` for recent changes and project history.
+See [CHANGELOG.md](CHANGELOG.md).
