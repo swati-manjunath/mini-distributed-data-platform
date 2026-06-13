@@ -25,6 +25,8 @@ flowchart LR
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full architecture overview and [ARCHITECTURAL_DECISIONS.md](ARCHITECTURAL_DECISIONS.md) for design notes.
 
+Benchmark strategy and latest local results are documented in [BENCHMARKING.md](BENCHMARKING.md).
+
 ## Requirements
 
 - Go 1.26.3 or compatible

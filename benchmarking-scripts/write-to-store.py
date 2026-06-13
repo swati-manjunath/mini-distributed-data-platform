@@ -1,68 +1,76 @@
+import argparse
 import socket
 import time
-import psutil
-import requests
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 
-# 1. Configuration
+import requests
+
+from benchmark_utils import print_summary
+
+
 BASE_URL = "http://127.0.0.1:8080"
 TOTAL_REQUESTS = 1000
 MAX_WORKERS = 20
-
+TIMEOUT_SECONDS = 3.0
 SYSTEM_NAME = socket.gethostname()
 
-def get_base_metrics():
-    """Gathers system metrics exactly once before flooding the database."""
-    cpu = psutil.cpu_percent(interval=0.1)
-    memory = psutil.virtual_memory().percent
-    return cpu, memory
 
-# Fetch the metrics payload upfront so psutil doesn't slow down the loop
-INITIAL_CPU, INITIAL_MEMORY = get_base_metrics()
-
-def send_benchmark_payload(request_id):
-    """Sends the metrics payload structured specifically for your Go PutRequest struct."""
-    
-    # FIX: Matching what your Go 'PutRequest' validation expects.
-    # Appending request_id ensures unique keys to test your hash ring routing!
+def send_put(base_url, key_prefix, request_id, timeout):
     payload = {
-        "key": f"{SYSTEM_NAME}-BENCH-{request_id}",
-        "value": f"cpu:{INITIAL_CPU}|mem:{INITIAL_MEMORY}"
+        "key": f"{key_prefix}-{request_id}",
+        "value": f"benchmark-value-{request_id}",
     }
-    
+
+    start = time.perf_counter()
     try:
-        response = requests.post(f"{BASE_URL}/put", json=payload, timeout=2.0)
-        return response.status_code
-    except Exception:
-        return "ERROR"
+        response = requests.post(f"{base_url}/put", json=payload, timeout=timeout)
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        return response.status_code, elapsed_ms
+    except requests.RequestException:
+        return "ERROR", None
+
 
 def main():
-    print(f"🚀 Launching Benchmark: Sending {TOTAL_REQUESTS} payloads matching PutRequest struct to {BASE_URL}/put")
-    print(f"🧵 Thread Pool Size: {MAX_WORKERS} (Zero sleep delay between requests)\n")
-    
-    start_time = time.perf_counter()
-    
-    # Use parallel threads to smash the Go endpoint without waiting
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        results = list(executor.map(send_benchmark_payload, range(TOTAL_REQUESTS)))
-        
-    duration = time.perf_counter() - start_time
-    
-    # Calculate performance metrics
-    successes = results.count(200)
-    errors = results.count("ERROR")
-    bad_requests = results.count(400)
-    other_errors = TOTAL_REQUESTS - successes - errors - bad_requests
-    
-    print("📊 BENCHMARK METRICS:")
-    print("=========================================")
-    print(f"Total Test Duration : {duration:.3f} seconds")
-    print(f"Throughput Rate     : {TOTAL_REQUESTS / duration:.2f} requests/sec")
-    print(f"Successful (200 OK) : {successes} / {TOTAL_REQUESTS}")
-    print(f"Bad Requests (400)  : {bad_requests} / {TOTAL_REQUESTS}")
-    print(f"Network Failures    : {errors}")
-    print(f"Other HTTP Errors   : {other_errors}")
-    print("=========================================")
+    parser = argparse.ArgumentParser(description="Benchmark KV Store Write Latency via /put")
+    parser.add_argument("--base-url", default=BASE_URL)
+    parser.add_argument("--requests", type=int, default=TOTAL_REQUESTS)
+    parser.add_argument("--workers", type=int, default=MAX_WORKERS)
+    parser.add_argument("--timeout", type=float, default=TIMEOUT_SECONDS)
+    parser.add_argument("--key-prefix", default=f"{SYSTEM_NAME}-WRITE-BENCH")
+    args = parser.parse_args()
+
+    started_at = time.perf_counter()
+    latencies_ms = []
+    status_counts = Counter()
+    errors = 0
+
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        futures = [
+            executor.submit(send_put, args.base_url, args.key_prefix, i, args.timeout)
+            for i in range(args.requests)
+        ]
+
+        for future in futures:
+            status, latency_ms = future.result()
+            status_counts[status] += 1
+            if latency_ms is None:
+                errors += 1
+            else:
+                latencies_ms.append(latency_ms)
+
+    print_summary(
+        benchmark="KV Store Write Latency",
+        target=f"{args.base_url}/put",
+        total_requests=args.requests,
+        concurrency=args.workers,
+        started_at=started_at,
+        latencies_ms=latencies_ms,
+        status_counts=status_counts,
+        errors=errors,
+        extra={"uses_flink": False, "key_prefix": args.key_prefix},
+    )
+
 
 if __name__ == "__main__":
     main()

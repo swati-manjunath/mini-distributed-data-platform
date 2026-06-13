@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here.
 
-## [Unreleased]
+## [2026-06-13]
 
 - Cleaned up repository metadata for GitHub publication.
 - Stopped requiring a `.env` file for the Go server to start.

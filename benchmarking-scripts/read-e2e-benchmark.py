@@ -21,6 +21,8 @@ import time
 
 import requests
 
+from benchmark_utils import summarize_latencies_ms
+
 try:
     from kafka import KafkaProducer
 except Exception:
@@ -181,14 +183,20 @@ def main():
     finally:
         producer.close()
 
-    if results:
-        overall_avg = sum(results) / len(results)
-        print(
-            f"COMPLETED: {len(results)} successes, "
-            f"{timeouts} timeouts, overall_avg={overall_avg:.6f}s"
-        )
-    else:
-        print(f"COMPLETED: 0 successes, {timeouts} timeouts")
+    latencies_ms = [value * 1000 for value in results]
+    summary = {
+        "benchmark": "End-to-End Pipeline Latency",
+        "uses_flink": True,
+        "bootstrap": args.bootstrap,
+        "topic": args.topic,
+        "kv": args.kv,
+        "tests": args.tests,
+        "messages_per_test": args.per,
+        "successes": len(results),
+        "timeouts": timeouts,
+        "latency_ms": summarize_latencies_ms(latencies_ms),
+    }
+    print(json.dumps(summary, indent=2))
 
 
 if __name__ == "__main__":
