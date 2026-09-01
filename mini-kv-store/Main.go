@@ -44,6 +44,7 @@ func main() {
 	// Parse cluster configuration
 	cluster = parseCluster(*clusterFlag, *nodeID)
 	numberOfNodes = len(cluster.Nodes)
+	hashRing = newHashRing(cluster.Nodes, defaultVirtualNodes)
 
 	configuredNodeCount := getEnvInt("NUMBER_OF_NODES", numberOfNodes)
 	if configuredNodeCount != numberOfNodes {

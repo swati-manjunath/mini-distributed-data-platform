@@ -7,12 +7,15 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 )
 
 var cluster Config // Global cluster config (accessible from handlers if needed)
 var numberOfNodes int
 var hashRing HashRing
+
+const defaultVirtualNodes = 100
 
 // Parse "1=127.0.0.1:8080,2=127.0.0.1:8081,3=127.0.0.1:8082"
 func parseCluster(clusterStr string, selfID int) Config {
@@ -57,13 +60,58 @@ func parseCluster(clusterStr string, selfID int) Config {
 	}
 }
 
+func newHashRing(nodes []Node, virtualNodes int) HashRing {
+	if len(nodes) == 0 {
+		panic("cannot create hash ring without nodes")
+	}
+	if virtualNodes <= 0 {
+		panic("virtual node count must be greater than zero")
+	}
+
+	ring := HashRing{
+		keys:         make([]uint32, 0, len(nodes)*virtualNodes),
+		nodes:        make(map[uint32]Node, len(nodes)*virtualNodes),
+		virtualNodes: virtualNodes,
+	}
+
+	for _, node := range nodes {
+		for replica := 0; replica < virtualNodes; replica++ {
+			position := hashKey(fmt.Sprintf("%d-%s-%d", node.ID, node.Address, replica))
+			ring.keys = append(ring.keys, position)
+			ring.nodes[position] = node
+		}
+	}
+
+	sort.Slice(ring.keys, func(i, j int) bool {
+		return ring.keys[i] < ring.keys[j]
+	})
+
+	return ring
+}
+
 func (h HashRing) getNodeForKey(key string) int {
+	return h.getNodeForHash(hashKey(key)).ID
+}
+
+func (h HashRing) getNodeForHash(hash uint32) Node {
+	if len(h.keys) == 0 {
+		panic("hash ring has not been initialized")
+	}
+
+	index := sort.Search(len(h.keys), func(i int) bool {
+		return h.keys[i] >= hash
+	})
+	if index == len(h.keys) {
+		index = 0
+	}
+
+	return h.nodes[h.keys[index]]
+}
+
+func hashKey(key string) uint32 {
 	hasher := fnv.New32a()
 	hasher.Write([]byte(key))
-	hash := hasher.Sum32()
-
-	nodeIndex := int(hash % uint32(len(cluster.Nodes)))
-	return cluster.Nodes[nodeIndex].ID
+	return hasher.Sum32()
 }
 
 func isLocalNode(node int) bool {

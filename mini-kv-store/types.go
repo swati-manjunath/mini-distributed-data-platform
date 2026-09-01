@@ -15,4 +15,8 @@ type Config struct {
 	Nodes []Node
 }
 
-type HashRing []uint32
+type HashRing struct {
+	keys         []uint32
+	nodes        map[uint32]Node
+	virtualNodes int
+}
